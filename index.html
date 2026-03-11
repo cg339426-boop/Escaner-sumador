@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SCANNER PRO V6.0</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        :root { --neon: #ff003c; --bg: #000; --card: #111; --success: #00ff66; --text: #fff; }
+        * { box-sizing: border-box; font-family: 'Segoe UI', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body, html { margin: 0; padding: 0; background: var(--bg); color: var(--text); height: 100%; width: 100%; overflow: hidden; }
+
+        .screen { display: flex; flex-direction: column; height: 100vh; width: 100vw; position: absolute; padding: 15px; background: var(--bg); z-index: 1; }
+        .hidden { display: none !important; }
+
+        /* CAMARA */
+        .cam-box { width: 100%; flex: 1; border: 2px solid var(--neon); border-radius: 20px; overflow: hidden; margin-bottom: 80px; }
+        
+        /* INDICADOR DE ESCANEO (NUEVO) */
+        .scan-counter {
+            position: fixed;
+            bottom: 135px;
+            left: 15px;
+            right: 15px;
+            background: rgba(0, 255, 102, 0.2);
+            border: 1px solid var(--success);
+            color: var(--success);
+            padding: 10px;
+            border-radius: 12px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 1.1rem;
+            backdrop-filter: blur(5px);
+            display: flex;
+            justify-content: space-between;
+            z-index: 10;
+        }
+
+        /* TICKET 50/50 HORIZONTAL */
+        .ticket-area { height: 43vh; background: #fff; color: #000; border-radius: 15px; margin-bottom: 10px; display: flex; flex-direction: column; overflow: hidden; }
+        .receipt-list { flex: 1; overflow-y: auto; padding: 10px; font-family: monospace; }
+        .receipt-row { display: flex; justify-content: space-between; border-bottom: 1px solid #ddd; padding: 8px 0; align-items: center; }
+        
+        .calc-area { height: 45vh; display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; padding-bottom: 75px; }
+        .calc-display { grid-column: span 3; background: #111; color: var(--success); text-align: right; padding: 10px; font-size: 1.8rem; border-radius: 10px; border: 1px solid #333; height: 50px; }
+        .num-btn { background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 10px; font-size: 1.3rem; font-weight: bold; display: flex; align-items: center; justify-content: center; }
+
+        /* MODALES */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 5000; display: none; justify-content: center; align-items: center; padding: 20px; }
+        .lookup-card { background: #111; border: 3px solid var(--success); border-radius: 25px; padding: 30px; width: 100%; text-align: center; }
+        .l-name { color: var(--success); font-size: 2.2rem; font-weight: 900; text-transform: uppercase; }
+        .l-price { color: var(--neon); font-size: 5.5rem; font-weight: 900; margin: 5px 0; font-family: monospace; }
+
+        /* BOTONES */
+        .btn-nav { width: 100%; padding: 16px; border: none; border-radius: 15px; font-weight: bold; color: white; text-transform: uppercase; font-size: 0.9rem; }
+        .btn-back-fixed { position: fixed; bottom: 10px; left: 15px; right: 15px; z-index: 100; background: #222; border: 1px solid #444; color: #aaa; padding: 15px; border-radius: 15px; text-align: center; }
+        
+        select, input { width: 100%; padding: 15px; margin: 5px 0; background: #111; color: white; border: 1px solid #444; border-radius: 12px; }
+        .inv-item { background: var(--card); padding: 12px; margin-bottom: 8px; border-radius: 12px; border-left: 4px solid var(--neon); display: flex; justify-content: space-between; align-items: center; }
+        
+        .data-row { display: flex; gap: 10px; margin-top: 5px; }
+        .btn-data { flex: 1; padding: 12px; border-radius: 12px; border: 1px dashed #555; background: #1a1a1a; color: #fff; font-size: 0.7rem; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div id="scr-home" class="screen" style="justify-content:center; align-items:center;">
+        <h1 style="font-size:3.5rem;">SCANNER</h1>
+        <div style="color:var(--neon); font-weight:bold; margin-bottom:40px;">PRO V6.0</div>
+        <button style="width:180px; height:180px; border-radius:50%; border:5px solid var(--neon); background:none; color:white;" onclick="irA('scr-menu')">INICIAR</button>
+    </div>
+
+    <div id="scr-menu" class="screen hidden">
+        <div class="cam-box" style="flex:0 0 28vh;"><div id="reader-menu"></div></div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+            <button class="btn-nav" style="background:var(--neon)" onclick="irA('scr-inv')">📋 INVENTARIO / EDITAR</button>
+            <button class="btn-nav" style="background:#222;" onclick="ajustarTasa()">💵 TASA: <span id="tasa-val">0</span> Bs</button>
+            <button class="btn-nav" style="background:#16a34a" onclick="irA('scr-scan')">🛒 MODO ESCANEO</button>
+            <button class="btn-nav" style="background:#444" onclick="irA('scr-ticket')">📄 VER TICKET / CALC</button>
+            <div class="data-row">
+                <button class="btn-data" onclick="exportarData()">📤 EXPORTAR</button>
+                <button class="btn-data" onclick="document.getElementById('fileInput').click()">📥 IMPORTAR</button>
+                <input type="file" id="fileInput" class="hidden" accept=".json" onchange="importarData(event)">
+            </div>
+        </div>
+        <div class="btn-back-fixed" onclick="irA('scr-home')">CERRAR SESIÓN</div>
+    </div>
+
+    <div id="scr-scan" class="screen hidden">
+        <div class="cam-box"><div id="reader-scan"></div></div>
+        
+        <div id="scan-indicator" class="scan-counter">
+            <span>ARTÍCULOS: <span id="scan-qty">0</span></span>
+            <span>TOTAL: $<span id="scan-total">0.00</span></span>
+        </div>
+
+        <button class="btn-nav" style="background:#16a34a; position:fixed; bottom:75px; left:15px; width:calc(100% - 30px);" onclick="irA('scr-ticket')">IR AL TICKET</button>
+        <div class="btn-back-fixed" onclick="irA('scr-menu')">VOLVER AL MENÚ</div>
+    </div>
+
+    <div id="scr-ticket" class="screen hidden">
+        <div class="ticket-area">
+            <div id="lista-ticket" class="receipt-list"></div>
+            <div id="total-ticket" style="padding:10px; background:#eee; text-align:right; font-weight:bold;">$0.00 | 0.00 Bs</div>
+        </div>
+        <div class="calc-area">
+            <div id="calc-screen" class="calc-display">0</div>
+            <button class="num-btn" onclick="numKey('7')">7</button><button class="num-btn" onclick="numKey('8')">8</button><button class="num-btn" onclick="numKey('9')">9</button>
+            <button class="num-btn" onclick="numKey('4')">4</button><button class="num-btn" onclick="numKey('5')">5</button><button class="num-btn" onclick="numKey('6')">6</button>
+            <button class="num-btn" onclick="numKey('1')">1</button><button class="num-btn" onclick="numKey('2')">2</button><button class="num-btn" onclick="numKey('3')">3</button>
+            <button class="num-btn" onclick="numKey('.')">.</button><button class="num-btn" onclick="numKey('0')">0</button><button class="num-btn" style="background:var(--neon)" onclick="numKey('C')">C</button>
+            <button class="num-btn" style="grid-column: span 2; background:#16a34a;" onclick="addManual()">SUMAR (+)</button>
+            <button class="num-btn" style="background:#444;" onclick="if(confirm('¿Limpiar ticket?')) { venta = []; updateTicketUI(); }">🗑️</button>
+        </div>
+        <div class="btn-back-fixed" onclick="irA('scr-scan')">VOLVER A ESCANEAR</div>
+    </div>
+
+    <div id="scr-inv" class="screen hidden">
+        <div style="display:flex; gap:5px;">
+            <button class="btn-nav" style="background:var(--neon); flex:1;" onclick="nuevaCat()">+ CATEGORÍA</button>
+            <button class="btn-nav" style="background:#444; width:60px;" onclick="borrarCatActual()">🗑️</button>
+        </div>
+        <select id="filtro-cat" onchange="renderInv()"></select>
+        <div id="inv-list" style="flex:1; overflow-y:auto; margin-top:10px;"></div>
+        <div class="btn-back-fixed" onclick="irA('scr-menu')">VOLVER AL MENÚ</div>
+    </div>
+
+    <div id="lookup-modal" class="modal-overlay" onclick="cerrarModal('lookup-modal')">
+        <div class="lookup-card">
+            <div id="l-name" class="l-name">PRODUCTO</div>
+            <div id="l-price" class="l-price">$0.00</div>
+            <div id="l-bs" style="color:#555; font-size:1.5rem;">0.00 Bs</div>
+        </div>
+    </div>
+
+    <div id="reg-modal" class="modal-overlay">
+        <div class="lookup-card" style="border-color:var(--neon); text-align:left;">
+            <h2 id="modal-title" style="color:var(--neon); margin:0 0 15px 0;">REGISTRAR</h2>
+            <input type="text" id="m-nom" placeholder="Nombre">
+            <input type="number" id="m-pre" placeholder="Precio $" step="0.01">
+            <select id="m-cat"></select>
+            <div style="display:flex; gap:10px; margin-top:20px;">
+                <button class="btn-nav" style="background:#444; flex:1;" onclick="cerrarModal('reg-modal')">X</button>
+                <button class="btn-nav" style="background:var(--neon); flex:1;" onclick="saveProd()">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const DB_NAME = 'SCAN_DB_V6.0';
+        let DB = JSON.parse(localStorage.getItem(DB_NAME)) || { productos: {}, cats: ["General"], tasa: 36.5 };
+        let html5QrCode = null, venta = [], calcInput = "0", isProcessing = false, currentId = null;
+
+        async function irA(id) {
+            if (html5QrCode) { try { await html5QrCode.stop(); html5QrCode = null; } catch(e) {} }
+            document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+            document.getElementById(id).classList.remove('hidden');
+            if (id === 'scr-menu') startCam("reader-menu", true);
+            if (id === 'scr-scan') { startCam("reader-scan", false); updateScanIndicator(); }
+            if (id === 'scr-ticket') updateTicketUI();
+            if (id === 'scr-inv') renderInv();
+            document.getElementById('tasa-val').innerText = DB.tasa.toFixed(2);
+        }
+
+        async function startCam(divId, isMenu) {
+            isProcessing = false;
+            html5QrCode = new Html5Qrcode(divId);
+            try {
+                await html5QrCode.start({ facingMode: "environment" }, { fps: 20, qrbox: 250 }, (code) => {
+                    if (isProcessing) return;
+                    const p = DB.productos[code];
+                    if (isMenu) {
+                        isProcessing = true;
+                        if (p) {
+                            document.getElementById('l-name').innerText = p.nombre;
+                            document.getElementById('l-price').innerText = "$" + p.precio.toFixed(2);
+                            document.getElementById('l-bs').innerText = (p.precio * DB.tasa).toFixed(2) + " Bs";
+                            document.getElementById('lookup-modal').style.display = 'flex';
+                        } else { openEditor(code); }
+                    } else if (p) {
+                        venta.push({ id: code, nombre: p.nombre, precio: p.precio });
+                        if (navigator.vibrate) navigator.vibrate(50);
+                        updateScanIndicator();
+                        isProcessing = true; setTimeout(() => isProcessing = false, 1200);
+                    }
+                });
+            } catch (e) {}
+        }
+
+        function updateScanIndicator() {
+            const total = venta.reduce((acc, item) => acc + item.precio, 0);
+            document.getElementById('scan-qty').innerText = venta.length;
+            document.getElementById('scan-total').innerText = total.toFixed(2);
+        }
+
+        function openEditor(code, isEdit = false) {
+            currentId = code;
+            const p = DB.productos[code] || { nombre: "", precio: "", cat: "General" };
+            document.getElementById('modal-title').innerText = isEdit ? "EDITAR" : "REGISTRAR";
+            document.getElementById('m-nom').value = p.nombre;
+            document.getElementById('m-pre').value = p.precio;
+            document.getElementById('m-cat').innerHTML = DB.cats.map(c => `<option value="${c}" ${c===p.cat?'selected':''}>${c}</option>`).join('');
+            document.getElementById('reg-modal').style.display = 'flex';
+        }
+
+        function saveProd() {
+            const n = document.getElementById('m-nom').value.trim(), p = document.getElementById('m-pre').value;
+            if(!n || !p) return;
+            DB.productos[currentId] = { nombre: n, precio: parseFloat(p), cat: document.getElementById('m-cat').value };
+            localStorage.setItem(DB_NAME, JSON.stringify(DB));
+            cerrarModal('reg-modal');
+            renderInv();
+        }
+
+        function cerrarModal(id) { document.getElementById(id).style.display = 'none'; isProcessing = false; }
+        
+        // GESTIÓN
+        function nuevaCat() { 
+            let n = prompt("Nombre categoría:"); 
+            if(n) { DB.cats.push(n); localStorage.setItem(DB_NAME, JSON.stringify(DB)); renderInv(); } 
+        }
+
+        function borrarCatActual() {
+            const c = document.getElementById('filtro-cat').value;
+            if(c === "Todas" || c === "General") return;
+            if(confirm(`¿Borrar categoría "${c}"?`)) {
+                Object.values(DB.productos).forEach(p => { if(p.cat === c) p.cat = "General"; });
+                DB.cats = DB.cats.filter(x => x !== c);
+                localStorage.setItem(DB_NAME, JSON.stringify(DB));
+                renderInv();
+            }
+        }
+
+        function renderInv() {
+            const f = document.getElementById('filtro-cat').value || "Todas";
+            document.getElementById('filtro-cat').innerHTML = `<option value="Todas">Ver Todas</option>` + DB.cats.map(c => `<option value="${c}" ${c===f?'selected':''}>${c}</option>`).join('');
+            let html = "";
+            Object.keys(DB.productos).forEach(id => {
+                const p = DB.productos[id];
+                if (f === "Todas" || p.cat === f) {
+                    html += `<div class="inv-item"><div onclick="openEditor('${id}', true)" style="flex:1"><b>${p.nombre}</b><br><small>$${p.precio.toFixed(2)}</small></div><button style="color:var(--neon);border:none;background:none;" onclick="borrarProd('${id}')">X</button></div>`;
+                }
+            });
+            document.getElementById('inv-list').innerHTML = html;
+        }
+
+        function borrarProd(id) { if(confirm("¿Eliminar?")) { delete DB.productos[id]; localStorage.setItem(DB_NAME, JSON.stringify(DB)); renderInv(); } }
+
+        function exportarData() {
+            const f = new Date();
+            const nombre = `inv_${f.getDate()}-${f.getMonth()+1}.json`;
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(DB));
+            const dl = document.createElement('a');
+            dl.setAttribute("href", dataStr); dl.setAttribute("download", nombre);
+            dl.click();
+        }
+
+        function importarData(e) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const data = JSON.parse(ev.target.result);
+                    if(data.productos) { DB = data; localStorage.setItem(DB_NAME, JSON.stringify(DB)); location.reload(); }
+                } catch(err) { alert("Error"); }
+            };
+            reader.readAsText(e.target.files[0]);
+        }
+
+        function numKey(val) {
+            if (val === 'C') calcInput = "0";
+            else if (val === '.') { if (!calcInput.includes('.')) calcInput += '.'; }
+            else { calcInput = calcInput === "0" ? val : calcInput + val; }
+            document.getElementById('calc-screen').innerText = calcInput;
+        }
+        function addManual() {
+            let m = parseFloat(calcInput);
+            if (m > 0) { venta.push({ id: 'man-'+Date.now(), nombre: 'Manual', precio: m }); updateTicketUI(); numKey('C'); }
+        }
+        function updateTicketUI() {
+            const lista = document.getElementById('lista-ticket');
+            const agrupados = venta.reduce((acc, item) => {
+                const key = item.nombre === 'Manual' ? item.id : item.id;
+                if (!acc[key]) acc[key] = { ...item, qty: 0, subtotal: 0 };
+                acc[key].qty++; acc[key].subtotal += item.precio;
+                return acc;
+            }, {});
+            let html = "", total = 0;
+            Object.values(agrupados).forEach(p => {
+                total += p.subtotal;
+                html += `<div class="receipt-row"><div><b>${p.nombre}</b> ${p.qty>1?'x'+p.qty:''}</div><div>$${p.subtotal.toFixed(2)} <button style="color:red;border:none;background:none;font-weight:bold;" onclick="eliminarUno('${p.id}')">X</button></div></div>`;
+            });
+            lista.innerHTML = html;
+            document.getElementById('total-ticket').innerText = `$${total.toFixed(2)} | ${(total * DB.tasa).toFixed(2)} Bs`;
+        }
+        function eliminarUno(id) { const idx = venta.findIndex(x => x.id === id); if (idx > -1) { venta.splice(idx, 1); updateTicketUI(); } }
+        function ajustarTasa() { let t = prompt("Tasa:", DB.tasa); if(t) { DB.tasa = parseFloat(t); localStorage.setItem(DB_NAME, JSON.stringify(DB)); document.getElementById('tasa-val').innerText = DB.tasa.toFixed(2); } }
+    </script>
+</body>
+</html>
